@@ -1,0 +1,48 @@
+[Unit]
+Description=Thermal Fan Control Daemon for Chip %i
+After=network.target
+
+[Service]
+Environment=PYTHONUNBUFFERED=1
+
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/tmp
+ExecStart=/usr/local/bin/sbc-fan-control.py --device %i --interval 10
+
+Restart=on-failure
+
+# Fallback: Send a termination signal, wait, and kill cleanly if it hangs
+KillSignal=SIGINT
+TimeoutStopSec=5
+
+# Basic filesystem isolation
+ProtectHome=yes
+PrivateTmp=yes
+
+# Network isolation
+PrivateNetwork=yes
+RestrictAddressFamilies=none
+
+# Security
+CapabilityBoundingSet=
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+NoNewPrivileges=yes
+
+# Remove the following if fails to start
+InaccessiblePaths=/root /home /mnt /media /srv /var
+ProtectSystem=strict
+PrivateDevices=yes
+RestrictRealtime=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @swap @mount
+
+[Install]
+WantedBy=multi-user.target

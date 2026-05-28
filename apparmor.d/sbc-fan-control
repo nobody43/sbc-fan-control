@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: GPL-3.0-only
+
+abi <abi/3.0>,
+
+include <tunables/global>
+
+@{exec_path} = /{,usr/}{,local/}bin/sbc-fan-control{,.py}
+
+profile sbc-fan-control @{exec_path} {
+  include <abstractions/base>
+  include <abstractions/consoles>
+  include <abstractions/python>
+
+  @{exec_path} r,
+
+  /{,usr/}bin/python3.[0-9]{,[0-9]} rix,
+  /{,usr/}bin/env rix,
+
+  /boot/config.txt r,
+  /boot/firmware/config.txt r,
+  /boot/armbianEnv.txt r,
+  /boot/orangepiEnv.txt r,
+  /boot/dietpiEnv.txt r,
+  /boot/uEnv.txt r,
+  /boot/bootEnv.txt r,
+
+  @{sys}/class/hwmon/ r,
+  @{sys}/class/thermal/ r,
+  @{sys}/class/pwm/ r,
+  @{sys}/class/nvme/ r,
+  @{sys}/devices/virtual/thermal/thermal_zone[0-9]*/type r,
+  @{sys}/devices/virtual/thermal/thermal_zone[0-9]*/temp r,
+  @{sys}/devices/virtual/thermal/thermal_zone[0-9]*/hwmon[0-9]*/name r,
+  @{sys}/devices/platform/**/power_supply/*/hwmon[0-9]*/name r,
+  @{sys}/devices/platform/**/nvme/nvme[0-9]*/hwmon[0-9]*/ r,
+  @{sys}/devices/platform/**/nvme/nvme[0-9]*/hwmon[0-9]*/name r,
+  @{sys}/devices/platform/**/nvme/nvme[0-9]*/hwmon[0-9]*/temp[0-9]*_input r,
+  @{sys}/devices/platform/**/pwm/pwmchip[0-9]*/export w,
+  @{sys}/devices/platform/**/pwm/pwmchip[0-9]*/pwm[0-9]*/period rw,
+  @{sys}/devices/platform/**/pwm/pwmchip[0-9]*/pwm[0-9]*/duty_cycle rw,
+  @{sys}/devices/platform/**/pwm/pwmchip[0-9]*/pwm[0-9]*/enable w,
+  @{sys}/devices/platform/**/pwm/pwmchip[0-9]*/pwm[0-9]*/period rw,
+  @{sys}/devices/platform/**/pwm/pwmchip[0-9]*/pwm[0-9]*/polarity w,
+  @{sys}/devices/platform/**/pwm/pwmchip[0-9]*/unexport w,
+  @{sys}/devices/platform/pwm-fan/hwmon/hwmon[0-9]*/name r,
+
+  # Silencer
+  deny /{dev/shm,tmp}/sbc-fan-control.am_i_confined.???????? w, # silence the check
+  deny /usr/{,local/}bin/ r,  # import lookup
+
+  # apport debug hook from OS
+  # (/etc/python3.*/sitecustomize.py)
+  deny /etc/default/apport r,
+  deny /etc/ssl/openssl.cnf r,
+  deny /etc/apt/apt.conf.d/{,*} r,
+  deny /usr/share/dpkg/cputable r,
+  deny /usr/share/dpkg/tupletable r,
+
+  include if exists <local/sbc-fan-control>
+}
+
+# vim:syntax=apparmor
