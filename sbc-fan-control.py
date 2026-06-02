@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 
-# LLM used! May contain BS
+# LLM leveraged! May contain BS
 
 # Defaults
 FREQUENCY          = 0.000040        # Sets period to 40,000 ns (25 kHz)
@@ -26,6 +26,8 @@ import pathlib
 import argparse
 import random
 import string
+import signal
+import atexit
 try:
     from periphery import PWM
     PERIPHERY_LOADED = True
@@ -34,6 +36,8 @@ except ImportError:
 
 # Initialize a global dictionary to persist fan states between executions (hysteresis)
 fan_states = {}
+# Track operational data to display on USR1
+adjust_result = {}
 
 
 def adjust_fan_speed(fan_object, default_duty, args):
@@ -270,14 +274,14 @@ def get_pwmchip_address_map():
         # We must follow the symbolic link to read the hardware address
         if os.path.islink(full_path):
             try:
-                # 1. Isolate the integer from 'pwmchipX'
+                # Isolate the integer from 'pwmchipX'
                 chip_integer = int(item.replace("pwmchip", ""))
                 
-                # 2. Read the symlink destination target
+                # Read the symlink destination target
                 # Example target: '../../devices/platform/fd8b0010.pwm/pwm/pwmchip2'
                 real_target_path = os.readlink(full_path)
                 
-                # 3. Split the path segments to isolate the hardware block name
+                # Split the path segments to isolate the hardware block name
                 path_segments = real_target_path.split('/')
                 
                 # Look for the segment containing '.pwm'
@@ -422,57 +426,65 @@ If fan fails to change speed, try disabling these buses."""
     return True
 
 
+def handle_usr1(signum, frame):
+    print(adjust_result)
+
+
+def handle_shutdown(signum, frame):
+    print(f"Received signal {signum}")
+    sys.exit(0)
+
+
+def cleanup(fan_):
+    print("\nStopping script. Resetting fan to full speed...")
+    fan_.duty_cycle = 1.0
+    fan_.close()
+
+
 def run_controller(pwm_chip, args):
     # Initialize the PWM controller (Maps to /sys/class/pwm/pwmchipX/pwm0)
     try:
         fan = PWM(chip=pwm_chip, channel=0)
+        atexit.register(cleanup, fan)
     except Exception as e:
         print(f"""[ERROR] Cannot accessi PWM chip: {e}
 Ensure the overlay is enabled and you are running as root/sudo."""
 , file=sys.stderr)
         sys.exit(110)
     
-    try:
-        # 1. High-level configuration setups
-        fan.period = FREQUENCY
-        fan.polarity = "normal"   # Handled cleanly without order conflicts
-     
-        # 2. Set initial duty cycle
-        fan.duty_cycle = DUTY_CYCLE_DEFAULT
-        fan.enable()              # Starts the PWM generation
-        print(f"Fan initialized at {fan.duty_cycle} speed.")
-    
-        # 3. Loop to adjust the fan
-        adjust_result_previous = None
-        while True:
-            adjust_result = adjust_fan_speed(fan, DUTY_CYCLE_DEFAULT, args)
+    # High-level configuration setups
+    fan.period = FREQUENCY
+    fan.polarity = "normal"   # Handled cleanly without order conflicts
+ 
+    # Set initial duty cycle
+    fan.duty_cycle = DUTY_CYCLE_DEFAULT
+    fan.enable()              # Starts the PWM generation
+    print(f"Fan initialized at {fan.duty_cycle} speed.")
 
-            if args.debug or args.log:
-                if args.debug:
-                    adjust_current = adjust_result
-                else:
-                    # Remove volatile keys to further compare; to display only diff, not every call
-                    exclude = {'cpu_temp', 'nvme_temp'}
-                    adjust_current = {k: v for k, v in adjust_result.items() if k not in exclude}
-    
-                # Compare with previous result and rewrite it, to show only changing data in log
-                if adjust_current != adjust_result_previous:
-                    adjust_result_previous = adjust_current
-                    print(adjust_current)
-                elif args.debug:
-                    print(adjust_current)
+    # Loop to adjust the fan
+    adjust_result_previous = None
+    while True:
+        global adjust_result
+        adjust_result = adjust_fan_speed(fan, DUTY_CYCLE_DEFAULT, args)
+        adjust_result['unixtime'] = int(time.time())  # populate every time
 
-            time.sleep(args.interval)
-    
-    except BaseException as e:
-        print("\nStopping script. Resetting fan to full speed...")
-        # Fallback so the processor doesn't cook if the script terminates
-        fan.duty_cycle = 1.0
-        fan.close()
+        if args.debug or args.log:
+            if args.debug:
+                adjust_current = adjust_result
+            else:
+                # Remove volatile keys to further compare; to display only diff, not every call
+                exclude = {'cpu_temp', 'nvme_temp', 'unixtime'}
+                adjust_current = {k: v for k, v in adjust_result.items() if k not in exclude}
 
-        if not isinstance(e, KeyboardInterrupt):
-            raise
+            # Compare with previous result and rewrite it, to show only changing data in log
+            if adjust_current != adjust_result_previous:
+                adjust_result_previous = adjust_current
+                print(adjust_current)
+            elif args.debug:
+                print(adjust_current)
 
+        time.sleep(args.interval)
+ 
 
 def handle_args():
     parser = argparse.ArgumentParser()
@@ -548,6 +560,10 @@ install it natively using system's package manager:
 \n*Note: Avoid using 'pip install python3-periphery' on modern Debian/Ubuntu
 to prevent breaking PEP-668 Externally Managed Environment blocks.""", file=sys.stderr)
         sys.exit(113)
+
+    signal.signal(signal.SIGUSR1, handle_usr1)
+    signal.signal(signal.SIGTERM, handle_shutdown)
+    signal.signal(signal.SIGINT, handle_shutdown)
 
     pwm_dict = get_pwmchip_address_map()
     all_pwms = '\n'.join(pwm_dict.keys())
