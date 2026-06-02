@@ -35,7 +35,7 @@ LockPersonality=yes
 NoNewPrivileges=yes
 
 # Remove the following if fails to start
-InaccessiblePaths=/root /home /mnt /media /srv /var
+InaccessiblePaths=/etc/ssh /root /home /mnt /media /opt /srv /var
 ProtectSystem=strict
 PrivateDevices=yes
 RestrictRealtime=yes
@@ -43,6 +43,8 @@ MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources @swap @mount
+SystemCallErrorNumber=EPERM
+ProtectClock=true
 
 [Install]
 WantedBy=multi-user.target
