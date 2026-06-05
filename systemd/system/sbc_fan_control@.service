@@ -9,7 +9,7 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/tmp
-ExecStart=/usr/local/bin/sbc-fan-control.py --device %i --interval 10
+ExecStart=/usr/local/bin/sbc_fan_control.py --device %i --interval 10
 
 Restart=on-failure
 
@@ -45,6 +45,7 @@ SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources @swap @mount
 SystemCallErrorNumber=EPERM
 ProtectClock=true
+AppArmorProfile=sbc_fan_control
 
 [Install]
 WantedBy=multi-user.target

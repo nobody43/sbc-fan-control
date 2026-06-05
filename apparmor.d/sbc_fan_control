@@ -4,9 +4,9 @@ abi <abi/3.0>,
 
 include <tunables/global>
 
-@{exec_path} = /{,usr/}{,local/}bin/sbc-fan-control{,.py}
+@{exec_path} = /{,usr/}{,local/}bin/sbc_fan_control{,.py}
 
-profile sbc-fan-control @{exec_path} {
+profile sbc_fan_control @{exec_path} {
   include <abstractions/base>
   include <abstractions/consoles>
   include <abstractions/python>
@@ -47,7 +47,7 @@ profile sbc-fan-control @{exec_path} {
   @{sys}/devices/platform/pwm-fan/hwmon/hwmon[0-9]*/name r,
 
   # Silencer
-  deny /{dev/shm,tmp}/sbc-fan-control.am_i_confined.???????? w, # silence the check
+  deny /{dev/shm,tmp}/sbc_fan_control.am_i_confined.???????? w, # silence the check
   deny /usr/{,local/}bin/ r,  # import lookup
 
   # apport debug hook from OS
@@ -58,7 +58,7 @@ profile sbc-fan-control @{exec_path} {
   deny /usr/share/dpkg/cputable r,
   deny /usr/share/dpkg/tupletable r,
 
-  include if exists <local/sbc-fan-control>
+  include if exists <local/sbc_fan_control>
 }
 
 # vim:syntax=apparmor
