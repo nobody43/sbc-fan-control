@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 
-# LLM leveraged! May contain BS
+# LLM assisted! May contain BS
 
 # Defaults
 FREQUENCY          = 0.000040        # Sets period to 40,000 ns (25 kHz)
@@ -54,7 +54,7 @@ def adjust_fan_speed(fan_object, default_duty, args):
     # Retrieve the last known duty cycle, or fallback to default
     last_duty = fan_states.get(fan_key, default_duty)
 
-    # 1. Define preset dictionary configurations
+    # Define preset dictionary configurations
     # The script looks for the HIGHEST temperature that is GREATER than the key.
     cpu_presets = {
         59.0: 1.00,  # 100% Speed - CPU Ceiling Trigger
@@ -80,10 +80,6 @@ def adjust_fan_speed(fan_object, default_duty, args):
         1.0:  0.30,  #  30% - Umbrella value
     }
 
-    is_collect_cpu_temp = args.collect_cpu
-    is_collect_nvme_temp = is_nvme_drive_present()
-    is_malfunction = False
-
     # Helper function to evaluate curves with hysteresis
     def get_target_duty(current_temp, presets, current_fan_duty):
         for threshold in presets.keys():
@@ -95,12 +91,18 @@ def adjust_fan_speed(fan_object, default_duty, args):
                 return presets[threshold]
         return default_duty
 
+    # Core logic:
+    # - Always collect CPU unless ignored. If not found and not ignored - set to full speed
+    # - Try to collect NVME. If found but no temperature - set to full speed
+    # - Otherwise - set speed (duty) according to highest temperature
+    is_malfunction = False
+
     cpu_target_duty = None
     cpu_temp = None
-    if is_collect_cpu_temp:
+    if args.collect_cpu:
         temperature_file = find_cpu_thermal_zone_file()
         if temperature_file:
-            with open(find_cpu_thermal_zone_file(), "r") as f:
+            with open(temperature_file, "r") as f:
                 cpu_temp = int(f.read().strip()) / 1000.0
 
             cpu_target_duty = get_target_duty(cpu_temp, cpu_presets, last_duty)
@@ -109,7 +111,7 @@ def adjust_fan_speed(fan_object, default_duty, args):
 
     nvme_target_duty = None
     max_nvme_temp = None
-    if is_collect_nvme_temp:
+    if is_nvme_drive_present():
         nvme_temps = read_nvme_temperatures()
         max_nvme_temp = max(nvme_temps, default=None)
         if max_nvme_temp:
@@ -120,12 +122,16 @@ def adjust_fan_speed(fan_object, default_duty, args):
     # Determine highest required speed
     if is_malfunction:
         final_duty = 1.0
+        cpu_target_duty  = -1.0  # display only
+        nvme_target_duty = -1.0  # display only
     elif cpu_target_duty and nvme_target_duty:
         final_duty = max(cpu_target_duty, nvme_target_duty)
     elif cpu_target_duty:
         final_duty = cpu_target_duty
+        nvme_target_duty = -1.0  # display only
     elif nvme_target_duty:
         final_duty = nvme_target_duty
+        cpu_target_duty  = -1.0  # display only
     else:
         final_duty = default_duty
 
@@ -191,7 +197,7 @@ def find_cpu_thermal_zone_file():
         None: If no valid matching thermal zone exists on the system.
     """
     base_path = "/sys/class/thermal"
-#    return None  # test for malfunction
+#    return []  # test for malfunction
     
     # Safety Check: If the base kernel thermal directory is missing, exit early
     if not os.path.exists(base_path):
@@ -212,9 +218,9 @@ def find_cpu_thermal_zone_file():
             if os.path.exists(type_file) and os.path.exists(temperature_file):
                 try:
                     with open(type_file, "r") as f:
-                        type_content = f.read().lower()
+                        content = f.read().lower()
                         # Match standard Linux architecture naming formats
-                        if "cpu" in type_content or "soc" in type_content:
+                        if "cpu" in content or "soc" in content or "core" in content or "center" in content:
                             result = temperature_file
                             break
                 except IOError:
@@ -233,12 +239,12 @@ def is_nvme_drive_present() -> bool:
     """
     nvme_subsystem_path = "/sys/class/nvme/"
     
-    # 1. Verify if the kernel's core NVMe module tree folder even exists
+    # Verify if the kernel's core NVMe module tree folder even exists
     if not os.path.exists(nvme_subsystem_path):
         return False
         
     try:
-        # 2. Check if the directory contains any active structural handles
+        # Check if the directory contains any active structural handles
         # Live controller directories show up naming strings like 'nvme0'
         devices = os.listdir(nvme_subsystem_path)
         
@@ -422,6 +428,14 @@ If fan fails to change speed, try disabling these buses."""
 , file=sys.stderr)
     else:
         print("No conflicting SPI or I2S overlays detected on the pins.")
+
+    # 3. Check sensor availaibility. Speed handled in adjust_fan_speed()
+    if not find_cpu_thermal_zone_file():
+        print('[WARNING] Unable to collect CPU temperature. Assuming high', file=sys.stderr)
+
+    if is_nvme_drive_present():
+        if not read_nvme_temperatures():
+            print('[WARNING] NVME is present, but temperature could not be found. Assuming high', file=sys.stderr)
         
     return True
 
